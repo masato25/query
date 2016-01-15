@@ -6,7 +6,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 
-	"github.com/Cepave/query/g"
+	"github.com/open-falcon/query/g"
 )
 
 type Dto struct {

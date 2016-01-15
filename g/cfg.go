@@ -22,10 +22,16 @@ type GraphConfig struct {
 	Cluster     map[string]string `json:"cluster"`
 }
 
+type ApiConfig struct {
+	Query string `json:"query"`
+	Max   int    `json:"max"`
+}
+
 type GlobalConfig struct {
 	Debug string       `json:"debug"`
 	Http  *HttpConfig  `json:"http"`
 	Graph *GraphConfig `json:"graph"`
+	Api   *ApiConfig   `json:"api"`
 }
 
 var (
