@@ -6,7 +6,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 
-	"github.com/open-falcon/query/g"
+	"github.com/Cepave/query/g"
 )
 
 type Dto struct {
@@ -24,6 +24,7 @@ func Start() {
 	configCommonRoutes()
 	configProcHttpRoutes()
 	configGraphRoutes()
+	configGrafanaRoutes()
 
 	// start http server
 	addr := g.Config().Http.Listen
