@@ -24,6 +24,7 @@ func Start() {
 	configCommonRoutes()
 	configProcHttpRoutes()
 	configGraphRoutes()
+	configApiRoutes()
 	configGrafanaRoutes()
 
 	// start http server

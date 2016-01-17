@@ -28,10 +28,11 @@ type ApiConfig struct {
 }
 
 type GlobalConfig struct {
-	Debug string       `json:"debug"`
-	Http  *HttpConfig  `json:"http"`
-	Graph *GraphConfig `json:"graph"`
-	Api   *ApiConfig   `json:"api"`
+	Debug     string       `json:"debug"`
+	Http      *HttpConfig  `json:"http"`
+	Graph     *GraphConfig `json:"graph"`
+	Dashboard string       `json:"dashboard"`
+	Api       *ApiConfig   `json:"api"`
 }
 
 var (
