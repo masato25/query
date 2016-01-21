@@ -39,12 +39,17 @@ type DbConfig struct {
 	Max  int    `json:"max"`
 }
 
+type GrpcConfig struct {
+	Port int `json:"port"`
+}
+
 type GlobalConfig struct {
 	Debug bool         `json:"debug"`
 	Http  *HttpConfig  `json:"http"`
 	Graph *GraphConfig `json:"graph"`
 	Api   *ApiConfig   `json:"api"`
 	Db    *DbConfig    `json:"db"`
+	Grpc  *GrpcConfig  `json:"grpc"`
 }
 
 var (

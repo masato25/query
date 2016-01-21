@@ -7,6 +7,7 @@ import (
 
 	"github.com/Cepave/query/g"
 	"github.com/Cepave/query/graph"
+	grpc "github.com/Cepave/query/grpc/bin"
 	"github.com/Cepave/query/http"
 	"github.com/Cepave/query/proc"
 )
@@ -34,8 +35,11 @@ func main() {
 	// graph
 	graph.Start()
 
+	// grpc
+	go grpc.Start()
+
 	// http
-	http.Start()
+	go http.Start()
 
 	select {}
 }
