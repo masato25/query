@@ -20,7 +20,7 @@ func getq(q *pb.QueryInput) cmodel.GraphQueryParam {
 	request := cmodel.GraphQueryParam{
 		Start:     int64(q.StartTs),
 		End:       int64(q.EndTs),
-		ConsolFun: q.Consolfun,
+		ConsolFun: q.ComputeMethod,
 		Endpoint:  q.Endpoint,
 		Counter:   q.Counter,
 	}
