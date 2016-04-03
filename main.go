@@ -9,6 +9,7 @@ import (
 	"github.com/Cepave/query/graph"
 	"github.com/Cepave/query/http"
 	"github.com/Cepave/query/proc"
+    "github.com/Cepave/query/elus"
 )
 
 func main() {
@@ -36,6 +37,6 @@ func main() {
 
 	// http
 	http.Start()
-
+    elus.Start()
 	select {}
 }
