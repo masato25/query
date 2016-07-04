@@ -101,6 +101,11 @@ func (s *server) Query(ctx context.Context, in *pb.QueryInput) (*pb.QueryReply, 
 
 func Start() {
 	defer func() {
+		if r := recover(); r != nil {
+			log.Error("grpc got painc")
+			log.Error(fmt.Sprintf("%s", r))
+			Start()
+		}
 	}()
 
 	port := fmt.Sprintf(":%v", g.Config().Grpc.Port)

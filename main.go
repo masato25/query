@@ -57,6 +57,13 @@ func main() {
 		go http.Start()
 	}
 
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+
 	select {
+	case sig := <-c:
+		if sig.String() == "^C" {
+			os.Exit(3)
+		}
 	}
 }
