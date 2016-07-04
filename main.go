@@ -3,8 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
+	"os/signal"
 
 	"github.com/Cepave/query/conf"
 	"github.com/Cepave/query/database"

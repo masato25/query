@@ -38,11 +38,6 @@ func InitDatabase() {
 	}
 }
 
-
-	defer func() {
-		httpMsg <- "http"
-	}()
-
 func Start() {
 	if !g.Config().Http.Enabled {
 		log.Println("http.Start warning, not enable")
