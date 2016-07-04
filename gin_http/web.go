@@ -3,7 +3,7 @@ package ginHttp
 import (
 	"time"
 
-	"log"
+	log "github.com/Sirupsen/logrus"
 
 	cmodel "github.com/Cepave/common/model"
 
