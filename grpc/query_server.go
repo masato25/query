@@ -99,10 +99,8 @@ func (s *server) Query(ctx context.Context, in *pb.QueryInput) (*pb.QueryReply, 
 	return &pb.QueryReply{Result: string(res)}, nil
 }
 
-func Start(grpcMsg chan<- string) {
-
+func Start() {
 	defer func() {
-		grpcMsg <- "grpc"
 	}()
 
 	port := fmt.Sprintf(":%v", g.Config().Grpc.Port)

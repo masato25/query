@@ -40,34 +40,23 @@ func main() {
 	// graph
 	graph.Start()
 
-	grpcMsg := make(chan string)
 	if gconf.Grpc.Enabled {
 		// grpc
-		go grpc.Start(grpcMsg)
+		go grpc.Start()
 	}
-
-	ginMsg := make(chan string)
 
 	if gconf.GinHttp.Enabled {
 		//lambdaSetup
 		database.Init()
 		conf.ReadConf("./conf/lambdaSetup.json")
-		go ginHttp.StartWeb(ginMsg)
+		go ginHttp.StartWeb()
 	}
-
-	httpMsg := make(chan string)
 
 	if gconf.Http.Enabled {
 		// http
-		go http.Start(httpMsg)
+		go http.Start()
 	}
 
 	select {
-	case <-grpcMsg:
-		log.Printf("%v is crashed", grpcMsg)
-	case <-ginMsg:
-		log.Printf("%v is crashed", ginMsg)
-	case <-httpMsg:
-		log.Printf("%v is crashed", ginMsg)
 	}
 }
