@@ -1,44 +1,42 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 
-	"github.com/Cepave/query/conf"
-	"github.com/Cepave/query/database"
-	"github.com/Cepave/query/g"
-	ginHttp "github.com/Cepave/query/gin_http"
-	"github.com/Cepave/query/graph"
-	"github.com/Cepave/query/grpc"
-	"github.com/Cepave/query/http"
-	"github.com/Cepave/query/proc"
+	"github.com/Cepave/open-falcon-backend/common/logruslog"
+	"github.com/Cepave/open-falcon-backend/common/vipercfg"
+
+	"github.com/masato25/query/conf"
+	"github.com/masato25/query/database"
+	"github.com/masato25/query/g"
+	ginHttp "github.com/masato25/query/gin_http"
+	"github.com/masato25/query/graph"
+	"github.com/masato25/query/grpc"
+	"github.com/masato25/query/http"
+	"github.com/masato25/query/proc"
 )
 
 func main() {
-	cfg := flag.String("c", "cfg.json", "specify config file")
-	version := flag.Bool("v", false, "show version")
-	versionGit := flag.Bool("vg", false, "show version and git commit log")
-	flag.Parse()
+	vipercfg.Parse()
+	vipercfg.Bind()
 
-	if *version {
+	if vipercfg.Config().GetBool("version") {
 		fmt.Println(g.VERSION)
-		os.Exit(0)
-	}
-	if *versionGit {
-		fmt.Println(g.VERSION, g.COMMIT)
 		os.Exit(0)
 	}
 
 	// config
-	g.ParseConfig(*cfg)
+	vipercfg.Load()
+	g.ParseConfig(vipercfg.Config().GetString("config"))
+	logruslog.Init()
 	gconf := g.Config()
 	// proc
 	proc.Start()
 
 	// graph
-	graph.Start()
+	go graph.Start()
 
 	if gconf.Grpc.Enabled {
 		// grpc
@@ -48,7 +46,7 @@ func main() {
 	if gconf.GinHttp.Enabled {
 		//lambdaSetup
 		database.Init()
-		conf.ReadConf("./conf/lambdaSetup.json")
+		conf.ReadConf()
 		go ginHttp.StartWeb()
 	}
 

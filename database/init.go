@@ -1,9 +1,9 @@
 package database
 
 import (
-	"log"
+	log "github.com/Sirupsen/logrus"
 
-	"github.com/Cepave/query/g"
+	"github.com/masato25/query/g"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 )

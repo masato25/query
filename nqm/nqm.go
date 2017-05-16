@@ -2,7 +2,7 @@ package nqm
 
 import (
 	"fmt"
-	dsl "github.com/Cepave/query/dsl/nqm_parser" // As NQM intermediate representation
+	dsl "github.com/masato25/query/dsl/nqm_parser" // As NQM intermediate representation
 )
 
 /**
@@ -24,12 +24,19 @@ type NqmDsl struct {
     StartTime EpochTime `json:"start_time"`
 	EndTime EpochTime `json:"end_time"`
 
-	IdsOfAgentProvinces []Id2Bytes `json:"ids_of_agent_provinces"`
+	IdsOfAgents []int32 `json:"ids_of_agents"`
 	IdsOfAgentIsps []Id2Bytes `json:"ids_of_agent_isps"`
+	IdsOfAgentProvinces []Id2Bytes `json:"ids_of_agent_provinces"`
+	IdsOfAgentCities []Id2Bytes `json:"ids_of_agent_cities"`
+
+	IdsOfTargets []int32 `json:"ids_of_targets"`
 	IdsOfTargetProvinces []Id2Bytes `json:"ids_of_target_provinces"`
 	IdsOfTargetIsps []Id2Bytes `json:"ids_of_target_isps"`
+	IdsOfTargetCities []Id2Bytes `json:"ids_of_target_cities"`
 
+	IspRelation dsl.HostRelation `json:"isp_relation"`
 	ProvinceRelation dsl.HostRelation `json:"province_relation"`
+	CityRelation dsl.HostRelation `json:"city_relation"`
 }
 
 // The data used for reporting of ICMP statistics(grouping by provinces of agents)
@@ -97,7 +104,7 @@ func (srv ServiceController) ListByProvinces(dslParams *dsl.QueryParams) []Provi
 	 * 2. Only for inter-province
 	 */
 	nqmDsl := toNqmDsl(dslParams)
-	nqmDsl.GroupingColumns = []string { "ib_ag_pv_id" }
+	nqmDsl.GroupingColumns = []string { "ag_pv_id" }
 	nqmDsl.ProvinceRelation = dsl.SAME_VALUE
 	// :~)
 
@@ -135,7 +142,7 @@ func (srv ServiceController) ListTargetsWithCityDetail(dslParams *dsl.QueryParam
 	 * Loads data with grouping by id of cities
 	 */
 	dslGroupByCity := toNqmDsl(dslParams)
-	dslGroupByCity.GroupingColumns = []string { "ib_tg_ct_id" }
+	dslGroupByCity.GroupingColumns = []string { "tg_ct_id" }
 	dslGroupByCity.ProvinceRelation = dsl.SAME_VALUE
 	rawIcmpGroupByCity, errForCityReport := srv.GetStatisticsOfIcmpByDsl(dslGroupByCity)
 	if errForCityReport != nil {
@@ -169,7 +176,7 @@ func (srv ServiceController) ListTargetsWithCityDetail(dslParams *dsl.QueryParam
 	 * Loads data with grouping by id of targets
 	 */
 	dslGroupByTarget := toNqmDsl(dslParams)
-	dslGroupByTarget.GroupingColumns = []string { "ib_tg_id", "ib_tg_ct_id", "ib_tg_isp_id" }
+	dslGroupByTarget.GroupingColumns = []string { "tg_id", "tg_ct_id", "tg_isp_id" }
 	rawIcmpGroupByTarget, errForTargetReport := srv.GetStatisticsOfIcmpByDsl(dslGroupByTarget)
 	if errForTargetReport != nil {
 		panic(errForTargetReport)
@@ -214,14 +221,31 @@ func (srv ServiceController) ListTargetsWithCityDetail(dslParams *dsl.QueryParam
 // Converts the IR of DSL to specific data for query on Cassandra
 func toNqmDsl(queryParams *dsl.QueryParams) *NqmDsl {
 	return &NqmDsl{
-		IdsOfAgentProvinces: loadIds(queryParams.AgentFilter.MatchProvinces, getIdOfProvinceByName, queryParams.AgentFilterById.MatchProvinces),
-		IdsOfAgentIsps: loadIds(queryParams.AgentFilter.MatchIsps, getIdOfIspByName, queryParams.AgentFilterById.MatchIsps),
-		IdsOfTargetProvinces: loadIds(queryParams.TargetFilter.MatchProvinces, getIdOfProvinceByName, queryParams.TargetFilterById.MatchProvinces),
-		IdsOfTargetIsps: loadIds(queryParams.TargetFilter.MatchIsps, getIdOfIspByName, queryParams.TargetFilterById.MatchIsps),
 		StartTime: EpochTime(queryParams.StartTime.Unix()),
 		EndTime: EpochTime(queryParams.EndTime.Unix()),
+
+		IdsOfAgents: safeIds(queryParams.AgentFilterById.MatchIds),
+		IdsOfAgentIsps: loadIds(queryParams.AgentFilter.MatchIsps, getIdOfIspByName, queryParams.AgentFilterById.MatchIsps),
+		IdsOfAgentProvinces: loadIds(queryParams.AgentFilter.MatchProvinces, getIdOfProvinceByName, queryParams.AgentFilterById.MatchProvinces),
+		IdsOfAgentCities: loadIds(queryParams.AgentFilter.MatchCities, getIdOfCityByName, queryParams.AgentFilterById.MatchCities),
+
+		IdsOfTargets: safeIds(queryParams.TargetFilterById.MatchIds),
+		IdsOfTargetIsps: loadIds(queryParams.TargetFilter.MatchIsps, getIdOfIspByName, queryParams.TargetFilterById.MatchIsps),
+		IdsOfTargetProvinces: loadIds(queryParams.TargetFilter.MatchProvinces, getIdOfProvinceByName, queryParams.TargetFilterById.MatchProvinces),
+		IdsOfTargetCities: loadIds(queryParams.TargetFilter.MatchCities, getIdOfCityByName, queryParams.TargetFilterById.MatchCities),
+
+		IspRelation: queryParams.IspRelation,
 		ProvinceRelation: queryParams.ProvinceRelation,
+		CityRelation: queryParams.CityRelation,
 	}
+}
+
+func safeIds(ids []int32) []int32 {
+	if ids == nil {
+		return make([]int32, 0)
+	}
+
+	return ids
 }
 
 func loadIds(
@@ -268,5 +292,8 @@ func getIdOfProvinceByName(name string) Id2Bytes {
 }
 func getIdOfIspByName(name string) Id2Bytes {
 	return Id2Bytes(getIspByName(name).Id)
+}
+func getIdOfCityByName(name string) Id2Bytes {
+	return Id2Bytes(getCityByName(name).Id)
 }
 // :~)

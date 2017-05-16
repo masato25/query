@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io/ioutil"
-	"log"
 	"math"
 	"net/http"
 	"sort"
@@ -12,10 +11,12 @@ import (
 	"strings"
 	"time"
 
-	cmodel "github.com/Cepave/common/model"
-	"github.com/Cepave/query/g"
-	"github.com/Cepave/query/graph"
-	"github.com/Cepave/query/proc"
+	log "github.com/Sirupsen/logrus"
+
+	cmodel "github.com/Cepave/open-falcon-backend/common/model"
+	"github.com/masato25/query/g"
+	"github.com/masato25/query/graph"
+	"github.com/masato25/query/proc"
 	"github.com/astaxie/beego/orm"
 	"github.com/bitly/go-simplejson"
 )
@@ -48,14 +49,14 @@ func postByJSON(rw http.ResponseWriter, req *http.Request, url string) {
 	s := buf.String()
 	reqPost, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(s)))
 	if err != nil {
-		log.Println("Error =", err.Error())
+		log.Errorf("Error = %v", err.Error())
 	}
 	reqPost.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
 	resp, err := client.Do(reqPost)
 	if err != nil {
-		log.Println("Error =", err.Error())
+		log.Errorf("Error = %v", err.Error())
 	}
 	defer resp.Body.Close()
 
@@ -116,13 +117,13 @@ func queryHistory(rw http.ResponseWriter, req *http.Request) {
 func getRequest(rw http.ResponseWriter, url string) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		log.Println("Error =", err.Error())
+		log.Errorf("Error = %v", err.Error())
 	}
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Println("Error =", err.Error())
+		log.Errorf("Error = %v", err.Error())
 	}
 	defer resp.Body.Close()
 
@@ -167,7 +168,7 @@ func postByForm(rw http.ResponseWriter, req *http.Request, url string) {
 	client := &http.Client{}
 	resp, err := client.PostForm(url, req.PostForm)
 	if err != nil {
-		log.Println("Error =", err.Error())
+		log.Errorf("Error = %v", err.Error())
 	}
 	defer resp.Body.Close()
 
@@ -376,7 +377,7 @@ func setStrategyTags(rw http.ResponseWriter, req *http.Request) {
 					setError(err.Error(), result)
 				} else {
 					num, _ := res.RowsAffected()
-					log.Println("mysql row affected nums =", num)
+					log.Debugf("mysql row affected nums = %v", num)
 					result["strategyID"] = strategyID
 					result["action"] = "create"
 				}
@@ -389,7 +390,7 @@ func setStrategyTags(rw http.ResponseWriter, req *http.Request) {
 					setError(err.Error(), result)
 				} else {
 					num, _ := res.RowsAffected()
-					log.Println("mysql row affected nums =", num)
+					log.Debugf("mysql row affected nums = %v", num)
 					result["strategyID"] = strategyID
 					result["action"] = "update"
 				}
@@ -472,12 +473,14 @@ func getPlatformJSON(nodes map[string]interface{}, result map[string]interface{}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		setError(err.Error(), result)
+		return
 	}
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		setError(err.Error(), result)
+		return
 	}
 	defer resp.Body.Close()
 
@@ -523,7 +526,8 @@ func queryAgentAlive(queries []*cmodel.GraphLastParam, reqHost string, result ma
 				}
 				last, err := graph.Last(*param)
 				if err != nil {
-					log.Printf("graph.last fail, resp: %v, err: %v", last, err)
+					setError("graph.last fail, err: "+err.Error(), result)
+					return data
 				}
 				if last == nil {
 					continue
@@ -782,15 +786,18 @@ func getPlatforms(rw http.ResponseWriter, req *http.Request) {
 			group := []interface{}{}
 			for _, device := range platform.(map[string]interface{})["ip_list"].([]interface{}) {
 				hostname = device.(map[string]interface{})["hostname"].(string)
-				if _, ok := hostnamesMap[hostname]; !ok {
-					hostnames = append(hostnames, hostname)
-					host := map[string]interface{}{
-						"name":     hostname,
-						"activate": device.(map[string]interface{})["ip_status"].(string),
-						"pop_id":   device.(map[string]interface{})["pop_id"].(string),
+				ip := device.(map[string]interface{})["ip"].(string)
+				if len(ip) > 0 && ip == getIPFromHostname(hostname, result) {
+					if _, ok := hostnamesMap[hostname]; !ok {
+						hostnames = append(hostnames, hostname)
+						host := map[string]interface{}{
+							"name":     hostname,
+							"activate": device.(map[string]interface{})["ip_status"].(string),
+							"pop_id":   device.(map[string]interface{})["pop_id"].(string),
+						}
+						group = append(group, host)
+						hostnamesMap[hostname] = 1
 					}
-					group = append(group, host)
-					hostnamesMap[hostname] = 1
 				}
 			}
 			groups[groupName] = group
@@ -905,7 +912,7 @@ func convertDurationToPoint(duration string, result map[string]interface{}) (tim
 		offset := int64(multiplier) * seconds
 		now := time.Now().Unix()
 		timestampFrom = now - offset
-		timestampTo = now
+		timestampTo = now + int64(5 * 60)
 	}
 	return
 }
@@ -927,6 +934,7 @@ func getGraphQueryResponse(metrics []string, duration string, hostnames []string
 			response, err := graph.QueryOne(request)
 			if err != nil {
 				setError("graph.queryOne fail, "+err.Error(), result)
+				return data
 			}
 			if result == nil {
 				continue
@@ -1061,14 +1069,10 @@ func getExistedHosts(hosts []interface{}, hostnamesExisted []string, result map[
 			popID := host.(map[string]interface{})["popID"].(string)
 			idc := idcMap[popID]
 			platform := host.(map[string]interface{})["platform"].(string)
-			if _, ok := hostExisted.(map[string]interface{})["platform"]; ok {
-				hostExisted.(map[string]interface{})["platform"] = appendUniqueString(hostExisted.(map[string]interface{})["platform"].([]string), platform)
-			} else {
-				hostExisted.(map[string]interface{})["platform"] = []string{platform}
-			}
 			hostExisted.(map[string]interface{})["isp"] = isp
 			hostExisted.(map[string]interface{})["province"] = province
 			hostExisted.(map[string]interface{})["idc"] = idc
+			hostExisted.(map[string]interface{})["platform"] = platform
 			hostsExisted[hostname] = hostExisted
 		}
 	}
@@ -1080,17 +1084,14 @@ func completeApolloFiltersData(hostsExisted map[string]interface{}, result map[s
 	keywords := map[string]interface{}{}
 	for _, host := range hostsExisted {
 		id := host.(map[string]interface{})["id"].(int)
-		platform := host.(map[string]interface{})["platform"].([]string)
+		platform := host.(map[string]interface{})["platform"].(string)
 		tags := []string{}
-		for _, s := range platform {
-			tags = appendUniqueString(tags, s)
-			if _, ok := keywords[s]; ok {
-				keywords[s] = appendUnique(keywords[s].([]int), id)
-			} else {
-				keywords[s] = []int{id}
-			}
+		tags = appendUniqueString(tags, platform)
+		if _, ok := keywords[platform]; ok {
+			keywords[platform] = appendUnique(keywords[platform].([]int), id)
+		} else {
+			keywords[platform] = []int{id}
 		}
-
 		isp := host.(map[string]interface{})["isp"].(string)
 		tags = appendUniqueString(tags, isp)
 		if _, ok := keywords[isp]; ok {
@@ -1156,8 +1157,9 @@ func getApolloFilters(rw http.ResponseWriter, req *http.Request) {
 			groupName := platform.(map[string]interface{})["platform"].(string)
 			for _, device := range platform.(map[string]interface{})["ip_list"].([]interface{}) {
 				hostname = device.(map[string]interface{})["hostname"].(string)
-				popID := device.(map[string]interface{})["pop_id"].(string)
-				if device.(map[string]interface{})["ip_status"].(string) == "1" {
+				ip := device.(map[string]interface{})["ip"].(string)
+				if len(ip) > 0 && ip == getIPFromHostname(hostname, result) {
+					popID := device.(map[string]interface{})["pop_id"].(string)
 					hostnames = append(hostnames, hostname)
 					host := map[string]interface{}{
 						"name":     hostname,
@@ -1188,6 +1190,73 @@ func getApolloFilters(rw http.ResponseWriter, req *http.Request) {
 	setResponse(rw, nodes)
 }
 
+func addNetworkSpeedAndBondMode(metrics []string, hostnames []string, result map[string]interface{}) []string {
+	metrics = append(metrics, "nic.bond.mode")
+	o := orm.NewOrm()
+	var rows []orm.Params
+	hostname := strings.Join(hostnames, "','")
+	sqlcmd := "SELECT id FROM graph.endpoint WHERE endpoint IN ('" + hostname + "')"
+	num, err := o.Raw(sqlcmd).Values(&rows)
+	endpointIDs := []string{}
+	if err != nil {
+		setError(err.Error(), result)
+	} else if num > 0 {
+		for _, row := range rows {
+			endpointIDs = append(endpointIDs, row["id"].(string))
+		}
+	}
+	tags := []string{}
+	if len(endpointIDs) > 0 {
+		sqlcmd = "SELECT DISTINCT tag FROM graph.tag_endpoint WHERE endpoint_id IN ('"
+		sqlcmd += strings.Join(endpointIDs, "','") + "') AND tag LIKE 'device=%'"
+		num, err := o.Raw(sqlcmd).Values(&rows)
+		if err != nil {
+			setError(err.Error(), result)
+		} else if num > 0 {
+			for _, row := range rows {
+				tag := row["tag"].(string)
+				if strings.Index(tag, "bond") > -1 || strings.Index(tag, "eth") > -1 {
+					tags = append(tags, tag)
+				}
+			}
+		}
+	}
+	for _, tag := range tags {
+		speedMetric := "nic.default.out.speed/" + tag
+		metrics = append(metrics, speedMetric)
+	}
+	return metrics
+}
+
+func addRecentData(data []*cmodel.GraphQueryResponse, dataRecent []*cmodel.GraphQueryResponse) []*cmodel.GraphQueryResponse {
+	for key, item := range data {
+		hostname := item.Endpoint
+		metric := item.Counter
+		latest := int64(0)
+		if len(item.Values) > 0 {
+			values := []*cmodel.RRDData{}
+			for _, pair := range item.Values {
+				if !math.IsNaN(float64(pair.Value)) && pair.Value > 0 {
+					latest = pair.Timestamp
+					values = append(values, pair)
+				}
+			}
+			for _, itemRecent := range dataRecent {
+				if itemRecent.Endpoint == hostname && itemRecent.Counter == metric {
+					for _, pair := range itemRecent.Values {
+						if pair.Timestamp > latest && !math.IsNaN(float64(pair.Value)) && pair.Value > 0 {
+							values = append(values, pair)
+						}
+					}
+				}
+			}
+			item.Values = values
+			data[key] = item
+		}
+	}
+	return data
+}
+
 func getApolloCharts(rw http.ResponseWriter, req *http.Request) {
 	errors := []string{}
 	var result = make(map[string]interface{})
@@ -1197,26 +1266,54 @@ func getApolloCharts(rw http.ResponseWriter, req *http.Request) {
 	metricType := arguments[4]
 	hostnames := strings.Split(arguments[5], ",")
 	metrics := getMetricsByMetricType(metricType)
+	if metricType == "bandwidths" {
+		metrics = addNetworkSpeedAndBondMode(metrics, hostnames, result)
+	}
 	duration := "1d"
 	if len(arguments) > 6 {
 		duration = arguments[6]
 	}
 	data := getGraphQueryResponse(metrics, duration, hostnames, result)
+	dataRecent := getGraphQueryResponse(metrics, "30min", hostnames, result)
+	data = addRecentData(data, dataRecent)
+
 	for _, series := range data {
-		values := []interface{}{}
-		for _, rrdObj := range series.Values {
-			value := []interface{}{
-				rrdObj.Timestamp * 1000,
-				rrdObj.Value,
+		metric := series.Counter
+		if strings.Index(metric, "nic.default.out.speed/device=") > -1 {
+			if len(series.Values) > 0 && series.Values[0].Value > 0 {
+				series.Counter = "net.transmission.limit.80%"
+				limit := series.Values[0].Value
+				for _, item := range series.Values {
+					value := item.Value
+					if value > limit {
+						limit = value
+						break
+					}
+				}
+				limit *= 1024 * 1024 * 0.8
+				for key, _ := range series.Values {
+					series.Values[key].Value = limit
+				}
+			} else {
+				series.Counter = ""
 			}
-			values = append(values, value)
 		}
-		item := map[string]interface{}{
-			"host":   series.Endpoint,
-			"metric": series.Counter,
-			"data":   values,
+		if series.Counter != "" {
+			values := []interface{}{}
+			for _, rrdObj := range series.Values {
+				value := []interface{}{
+					rrdObj.Timestamp * 1000,
+					rrdObj.Value,
+				}
+				values = append(values, value)
+			}
+			item := map[string]interface{}{
+				"host":   series.Endpoint,
+				"metric": series.Counter,
+				"data":   values,
+			}
+			items = append(items, item)
 		}
-		items = append(items, item)
 	}
 	result["items"] = items
 	var nodes = make(map[string]interface{})
@@ -1277,11 +1374,11 @@ func getBandwidthsAverage(metricType string, duration string, hostnames []string
 				average = sum / divider
 			}
 			item := map[string]interface{}{
-				"host": series.Endpoint,
-				"ip":   getIPFromHostname(series.Endpoint, result),
+				"host":             series.Endpoint,
+				"ip":               getIPFromHostname(series.Endpoint, result),
 				"net.in.bits.avg":  0,
 				"net.out.bits.avg": 0,
-				"time":                  "",
+				"time":             "",
 			}
 			if value, ok := hostMap[series.Endpoint]; ok {
 				item = value.(map[string]interface{})
@@ -1321,8 +1418,11 @@ func getPlatformBandwidthsFiveMinutesAverage(platformName string, metricType str
 			if groupName == platformName {
 				for _, device := range platform.(map[string]interface{})["ip_list"].([]interface{}) {
 					hostname = device.(map[string]interface{})["hostname"].(string)
-					if device.(map[string]interface{})["ip_status"].(string) == "1" {
-						hostnames = append(hostnames, hostname)
+					ip := device.(map[string]interface{})["ip"].(string)
+					if len(ip) > 0 && ip == getIPFromHostname(hostname, result) {
+						if device.(map[string]interface{})["ip_status"].(string) == "1" {
+							hostnames = append(hostnames, hostname)
+						}
 					}
 				}
 			}
@@ -1342,7 +1442,7 @@ func getPlatformBandwidthsFiveMinutesAverage(platformName string, metricType str
 	return nodes
 }
 
-func getPlatformContact(platformName string, rw http.ResponseWriter, nodes map[string]interface{}) {
+func getPlatformContact(platformName string, nodes map[string]interface{}) {
 	errors := []string{}
 	var result = make(map[string]interface{})
 	result["error"] = errors
@@ -1388,8 +1488,6 @@ func getPlatformContact(platformName string, rw http.ResponseWriter, nodes map[s
 						items = append(items, item)
 					}
 					platformMap[name] = items
-				} else {
-					platformMap[name] = "BOSS 沒有平台負責人資訊"
 				}
 			}
 		}
@@ -1415,35 +1513,62 @@ func parsePlatformArguments(rw http.ResponseWriter, req *http.Request) {
 		nodes = getPlatformBandwidthsFiveMinutesAverage(platformName, metricType, rw)
 	} else if len(arguments) == 5 && arguments[len(arguments)-1] == "contact" {
 		platformName := arguments[len(arguments)-2]
-		getPlatformContact(platformName, rw, nodes)
+		getPlatformContact(platformName, nodes)
+	} else {
+		errors := []string{}
+		var result = make(map[string]interface{})
+		result["error"] = errors
+		errorMessage := "Error: wrong API path."
+		if strings.Index(req.URL.Path, "/bandwidths/") > -1 {
+			errorMessage += " Example: /api/platforms/{platformName}/bandwidths/average"
+		} else if strings.Index(req.URL.Path, "/contact") > -1 {
+			errorMessage += " Example: /api/platforms/{platformName}/contact"
+		}
+		setError(errorMessage, result)
+		nodes["result"] = result
 	}
 	setResponse(rw, nodes)
 }
 
-func getBandwidthsSum(metricType string, duration string, hostnames []string, result map[string]interface{}) []interface{} {
+func getBandwidthsSum(metricType string, duration string, hostnames []string, filter string, result map[string]interface{}) []interface{} {
 	items := []interface{}{}
 	sort.Strings(hostnames)
 	metrics := getMetricsByMetricType(metricType)
 	metricMap := map[string]interface{}{}
+	valuesMap := map[string]map[float64]float64{}
 	timestamps := []float64{}
 	if len(metrics) > 0 && len(hostnames) > 0 {
 		data := getGraphQueryResponse(metrics, duration, hostnames, result)
-		for _, rrdObj := range data[0].Values {
+		index := -1
+		max := 0
+		for key, item := range data {
+			if len(item.Values) > max {
+				max = len(item.Values)
+				index = key
+			}
+		}
+		for _, rrdObj := range data[index].Values {
 			timestamps = append(timestamps, float64(rrdObj.Timestamp))
 		}
 		if len(timestamps) > 0 {
 			for _, metric := range metrics {
-				values := []float64{}
-				for _, _ = range timestamps {
-					values = append(values, float64(0))
+				valuesPair := map[float64]float64{}
+				for _, timestamp := range timestamps {
+					valuesPair[timestamp] = float64(0)
 				}
-				metricMap[metric] = values
+				valuesMap[metric] = valuesPair
 			}
 			for _, series := range data {
-				values := metricMap[series.Counter].([]float64)
-				for key, rrdObj := range series.Values {
+				valuesPair := valuesMap[series.Counter]
+				for _, rrdObj := range series.Values {
 					if !math.IsNaN(float64(rrdObj.Value)) {
-						values[key] += float64(rrdObj.Value)
+						valuesPair[float64(rrdObj.Timestamp)] += float64(rrdObj.Value)
+					}
+				}
+				values := []float64{}
+				for _, timestamp := range timestamps {
+					if valuesPair[timestamp] >= 0 {
+						values = append(values, valuesPair[timestamp])
 					}
 				}
 				metricMap[series.Counter] = values
@@ -1468,8 +1593,77 @@ func getBandwidthsSum(metricType string, duration string, hostnames []string, re
 			}
 			items = append(items, item)
 		}
+		if len(filter) > 0 && strings.Index(filter, ",") == -1 {
+			queryIDCsBandwidths(filter, result)
+			if len(result["error"].([]string)) > 0 {
+				result["error"] = []string{}
+			} else {
+				upperLimit := result["items"].(map[string]interface{})["upperLimitMB"].(float64) * 1024 * 1024
+				data := []interface{}{}
+				for _, timestamp := range timestamps {
+					datum := []interface{}{
+						timestamp * 1000,
+						upperLimit,
+					}
+					data = append(data, datum)
+				}
+				item := map[string]interface{}{
+					"host":   strings.Join(hostnames, ","),
+					"metric": "net.if.upper.limit.bits",
+					"data":   data,
+				}
+				items = append(items, item)
+			}
+		}
 	}
 	return items
+}
+
+func getNICOutSpeed(hostname string, result map[string]interface{}) int {
+	NICOutSpeed := 0
+	metrics := []string{
+		"nic.out.speed/device=bond0",
+		"nic.out.speed/device=eth0",
+		"nic.out.speed/device=eth1",
+		"nic.out.speed/device=eth2",
+		"nic.out.speed/device=eth3",
+		"nic.out.speed/device=eth4",
+		"nic.out.speed/device=eth5",
+	}
+	var param cmodel.GraphLastParam
+	var params []cmodel.GraphLastParam
+	param.Endpoint = hostname
+	for _, metric := range metrics {
+		param.Counter = metric
+		params = append(params, param)
+	}
+
+	var data []cmodel.GraphLastResp
+	proc.LastRequestCnt.Incr()
+	for _, param := range params {
+		last, err := graph.Last(param)
+		if err != nil {
+			setError("graph.last fail, err: "+err.Error(), result)
+			return NICOutSpeed
+		}
+		if last == nil {
+			continue
+		}
+		data = append(data, *last)
+	}
+	proc.LastRequestItemCnt.IncrBy(int64(len(data)))
+	if len(data) > 0 {
+		if data[0].Value.Value > 0 {
+			NICOutSpeed = int(data[0].Value.Value)
+		} else {
+			for _, item := range data {
+				if NICOutSpeed < int(item.Value.Value) {
+					NICOutSpeed = int(item.Value.Value)
+				}
+			}
+		}
+	}
+	return NICOutSpeed
 }
 
 func getHostsBandwidths(rw http.ResponseWriter, req *http.Request) {
@@ -1488,14 +1682,27 @@ func getHostsBandwidths(rw http.ResponseWriter, req *http.Request) {
 		metricType = arguments[len(arguments)-3]
 		method = arguments[len(arguments)-2]
 		duration = arguments[len(arguments)-1]
+	} else if len(arguments) == 5 && arguments[2] == "hosts" {
+		hostnames = strings.Split(arguments[3], ",")
+		method = arguments[4]
 	}
-
 	if method == "average" {
 		items = getBandwidthsAverage(metricType, duration, hostnames, result)
 	} else if method == "sum" {
-		items = getBandwidthsSum(metricType, duration, hostnames, result)
+		filter := req.URL.Query().Get("filter")
+		items = getBandwidthsSum(metricType, duration, hostnames, filter, result)
+	} else if method == "nic-out-speed" {
+		for _, hostname := range hostnames {
+			if strings.Index(hostname, "-") > -1 {
+				NICOutSpeed := getNICOutSpeed(hostname, result)
+				item := map[string]interface{}{
+					"hostname": hostname,
+					"nic.out.speed.bits": NICOutSpeed,
+				}
+				items = append(items, item)
+			}
+		}
 	}
-
 	result["items"] = items
 	nodes["result"] = result
 	nodes["count"] = len(items)
@@ -1521,7 +1728,7 @@ func getIDCsHosts(rw http.ResponseWriter, req *http.Request) {
 				hostname = device.(map[string]interface{})["hostname"].(string)
 				if _, ok := hostnamesMap[hostname]; !ok {
 					ip := device.(map[string]interface{})["ip"].(string)
-					if ip == getIPFromHostname(hostname, result) {
+					if len(ip) > 0 && ip == getIPFromHostname(hostname, result) {
 						hostnames = append(hostnames, hostname)
 						idcID := device.(map[string]interface{})["pop_id"].(string)
 						host := map[string]interface{}{
@@ -1550,8 +1757,8 @@ func getIDCsHosts(rw http.ResponseWriter, req *http.Request) {
 				}
 			}
 		}
-		idcNamesMap := map[string]string{}
-		idcNames := []string{}
+		IDCNamesMap := map[string]string{}
+		IDCNames := []string{}
 		o := orm.NewOrm()
 		var idcs []*Idc
 		sqlcommand := "SELECT pop_id, name FROM grafana.idc ORDER BY pop_id ASC"
@@ -1560,16 +1767,16 @@ func getIDCsHosts(rw http.ResponseWriter, req *http.Request) {
 			setError(err.Error(), result)
 		} else {
 			for _, idc := range idcs {
-				idcNamesMap[idc.Name] = strconv.Itoa(idc.Pop_id)
-				idcNames = appendUniqueString(idcNames, idc.Name)
+				IDCNamesMap[idc.Name] = strconv.Itoa(idc.Pop_id)
+				IDCNames = appendUniqueString(IDCNames, idc.Name)
 			}
 		}
-		sort.Strings(idcNames)
-		for _, idcName := range idcNames {
-			idcID := idcNamesMap[idcName]
+		sort.Strings(IDCNames)
+		for _, IDCName := range IDCNames {
+			idcID := IDCNamesMap[IDCName]
 			if _, ok := idcsMap[idcID]; ok {
 				idc := idcsMap[idcID]
-				idcsMap[idcName] = idc
+				idcsMap[IDCName] = idc
 				delete(idcsMap, idcID)
 			}
 		}
@@ -1587,24 +1794,16 @@ func getIDCsHosts(rw http.ResponseWriter, req *http.Request) {
 	setResponse(rw, nodes)
 }
 
-func getIDCsBandwidthsUpperLimit(rw http.ResponseWriter, req *http.Request) {
+func queryIDCsBandwidths(IDCName string, result map[string]interface{}) {
 	var nodes = make(map[string]interface{})
-	errors := []string{}
-	var result = make(map[string]interface{})
-	result["error"] = errors
-	arguments := strings.Split(req.URL.Path, "/")
-	idcName := ""
 	upperLimitSum := float64(0)
-	if len(arguments) == 6 && arguments[len(arguments)-2] == "bandwidths" && arguments[len(arguments)-1] == "limit" {
-		idcName = arguments[len(arguments)-3]
-	}
 	fcname := g.Config().Api.Name
 	fctoken := getFctoken()
 	url := g.Config().Api.Uplink
 	params := map[string]string{
 		"fcname":   fcname,
 		"fctoken":  fctoken,
-		"pop_name": idcName,
+		"pop_name": IDCName,
 	}
 	s, err := json.Marshal(params)
 	if err != nil {
@@ -1627,19 +1826,23 @@ func getIDCsBandwidthsUpperLimit(rw http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			setError(err.Error(), result)
 		}
-
 		if nodes["status"] != nil && int(nodes["status"].(float64)) == 1 {
-			for _, uplink := range nodes["result"].([]interface{}) {
-				upperLimit := uplink.(map[string]interface{})["all_uplink_top"].(float64)
-				upperLimitSum += upperLimit
+			if len(nodes["result"].([]interface{})) == 0 {
+				setError("IDC name not found", result)
+			} else {
+				for _, uplink := range nodes["result"].([]interface{}) {
+					upperLimit := uplink.(map[string]interface{})["all_uplink_top"].(float64)
+					upperLimitSum += upperLimit
+				}
 			}
+		} else {
+			setError("Error occurs", result)
 		}
 	}
 	items := map[string]interface{}{
-		"idcName":      idcName,
+		"IDCName":      IDCName,
 		"upperLimitMB": upperLimitSum,
 	}
-
 	if _, ok := nodes["info"]; ok {
 		delete(nodes, "info")
 	}
@@ -1647,6 +1850,114 @@ func getIDCsBandwidthsUpperLimit(rw http.ResponseWriter, req *http.Request) {
 		delete(nodes, "status")
 	}
 	result["items"] = items
+}
+
+func getIDCsBandwidthsUpperLimit(rw http.ResponseWriter, req *http.Request) {
+	var nodes = make(map[string]interface{})
+	errors := []string{}
+	var result = make(map[string]interface{})
+	result["error"] = errors
+	arguments := strings.Split(req.URL.Path, "/")
+	IDCName := ""
+	if len(arguments) == 6 && arguments[len(arguments)-2] == "bandwidths" && arguments[len(arguments)-1] == "limit" {
+		IDCName = arguments[len(arguments)-3]
+		queryIDCsBandwidths(IDCName, result)
+	} else {
+		errorMessage := "Error: wrong API path."
+		errorMessage += " Example: /api/idcs/{IDCName}/bandwidths/limit"
+		setError(errorMessage, result)
+	}
+	nodes["result"] = result
+	setResponse(rw, nodes)
+}
+
+func getHostsList(rw http.ResponseWriter, req *http.Request) {
+	var nodes = make(map[string]interface{})
+	errors := []string{}
+	var result = make(map[string]interface{})
+	result["error"] = errors
+	items := []interface{}{}
+	getPlatformJSON(nodes, result)
+	hosts := map[string]interface{}{}
+	hostnames := []string{}
+	hostnamesMap := map[string]int{}
+	if int(nodes["status"].(float64)) == 1 {
+		hostname := ""
+		for _, platform := range nodes["result"].([]interface{}) {
+			platformName := platform.(map[string]interface{})["platform"].(string)
+			for _, device := range platform.(map[string]interface{})["ip_list"].([]interface{}) {
+				hostname = device.(map[string]interface{})["hostname"].(string)
+				ip := device.(map[string]interface{})["ip"].(string)
+				if len(ip) > 0 && ip == getIPFromHostname(hostname, result) {
+					if _, ok := hostnamesMap[hostname]; !ok {
+						ip := device.(map[string]interface{})["ip"].(string)
+						if len(ip) > 0 && ip == getIPFromHostname(hostname, result) {
+							hostnames = append(hostnames, hostname)
+							idcID := device.(map[string]interface{})["pop_id"].(string)
+							host := map[string]interface{}{
+								"activate":     device.(map[string]interface{})["ip_status"].(string),
+								"hostname":     hostname,
+								"idcID":        idcID,
+								"ip":           ip,
+								"platform":     platformName,
+								"isp":          strings.Split(hostname, "-")[0],
+								"provinceCode": strings.Split(hostname, "-")[1],
+							}
+							hostnamesMap[hostname] = 1
+							hosts[hostname] = host
+						}
+					} else {
+						host := hosts[hostname].(map[string]interface{})
+						platforms := strings.Split(host["platform"].(string), ", ")
+						platforms = appendUniqueString(platforms, platformName)
+						host["platform"] = strings.Join(platforms, ", ")
+						hosts[hostname] = host
+					}
+				}
+			}
+		}
+		sort.Strings(hostnames)
+		idcIDsMap := map[string]interface{}{}
+		idcNames := []string{}
+		o := orm.NewOrm()
+		var idcs []*Idc
+		sqlcommand := "SELECT pop_id, province, city, name FROM grafana.idc ORDER BY pop_id ASC"
+		_, err := o.Raw(sqlcommand).QueryRows(&idcs)
+		if err != nil {
+			setError(err.Error(), result)
+		} else {
+			for _, idc := range idcs {
+				item := map[string]string{
+					"name":     idc.Name,
+					"province": idc.Province,
+					"city":     idc.City,
+				}
+				idcIDsMap[strconv.Itoa(idc.Pop_id)] = item
+				idcNames = appendUniqueString(idcNames, idc.Name)
+			}
+		}
+		sort.Strings(idcNames)
+		for _, hostname := range hostnames {
+			host := hosts[hostname].(map[string]interface{})
+			idcID := host["idcID"].(string)
+			if _, ok := idcIDsMap[idcID]; ok {
+				item := idcIDsMap[idcID]
+				host["idc"] = item.(map[string]string)["name"]
+				host["province"] = item.(map[string]string)["province"]
+				host["city"] = item.(map[string]string)["city"]
+				delete(host, "idcID")
+				items = append(items, host)
+			}
+		}
+	}
+	if _, ok := nodes["info"]; ok {
+		delete(nodes, "info")
+	}
+	if _, ok := nodes["status"]; ok {
+		delete(nodes, "status")
+	}
+	result["items"] = items
+	nodes["count"] = len(items)
 	nodes["result"] = result
 	setResponse(rw, nodes)
 }
@@ -1668,4 +1979,5 @@ func configAPIRoutes() {
 	http.HandleFunc("/api/hosts/", getHostsBandwidths)
 	http.HandleFunc("/api/idcs/hosts", getIDCsHosts)
 	http.HandleFunc("/api/idcs/", getIDCsBandwidthsUpperLimit)
+	http.HandleFunc("/api/hosts", getHostsList)
 }

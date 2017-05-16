@@ -10,29 +10,11 @@ type TestQueryParamsSuite struct{}
 
 var _ = Suite(&TestQueryParamsSuite{})
 
-// Tests the adding values for node's properties
-func (suite *TestQueryParamsSuite) TestAddValuesToNodeProperties(c *C) {
-	var testedParam = &QueryParams{}
-
-	testedParam.addProvinceOfAgent("p1", "p2")
-	testedParam.addIspOfAgent("i1", "i2")
-	testedParam.addCityOfAgent("c1", "c2")
-	testedParam.addProvinceOfTarget("p3", "p4")
-	testedParam.addIspOfTarget("i3", "i4")
-	testedParam.addCityOfTarget("c3", "c4")
-
-	c.Assert(testedParam.AgentFilter.MatchIsps, DeepEquals, []string{ "i1", "i2" })
-	c.Assert(testedParam.AgentFilter.MatchProvinces, DeepEquals, []string{ "p1", "p2" })
-	c.Assert(testedParam.AgentFilter.MatchCities, DeepEquals, []string{ "c1", "c2" })
-	c.Assert(testedParam.TargetFilter.MatchIsps, DeepEquals, []string{ "i3", "i4" })
-	c.Assert(testedParam.TargetFilter.MatchProvinces, DeepEquals, []string{ "p3", "p4" })
-	c.Assert(testedParam.TargetFilter.MatchCities, DeepEquals, []string{ "c3", "c4" })
-}
-
 // Tests the error for both "province" and "city" are set
 type locationErrorTestCase struct {
 	params *QueryParams
 	matchError string
+	hasError bool
 }
 func (suite *TestQueryParamsSuite) TestCheckParamsWithLocationError(c *C) {
 	testCases := []*locationErrorTestCase {
@@ -43,7 +25,7 @@ func (suite *TestQueryParamsSuite) TestCheckParamsWithLocationError(c *C) {
 					MatchCities: []string{ "c1", "c2" },
 				},
 			},
-			".*Agent.*",
+			".*Agent.*", true,
 		},
 		&locationErrorTestCase {
 			&QueryParams {
@@ -52,15 +34,19 @@ func (suite *TestQueryParamsSuite) TestCheckParamsWithLocationError(c *C) {
 					MatchCities: []string{ "c1", "c2" },
 				},
 			},
-			".*Target.*",
+			".*Target.*", true,
 		},
 	}
 
 	for _, testCase := range testCases {
 		err := testCase.params.checkParams()
 
-		c.Logf("Error for check parameters: %v", err)
-		c.Assert(err, ErrorMatches, testCase.matchError)
+		if testCase.hasError {
+			c.Logf("Error for check parameters: %v", err)
+			c.Assert(err, ErrorMatches, testCase.matchError)
+		} else {
+			c.Assert(err, IsNil)
+		}
 	}
 }
 

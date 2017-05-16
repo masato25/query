@@ -3,17 +3,18 @@ package graph
 import (
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"time"
 
-	cmodel "github.com/Cepave/common/model"
-	cutils "github.com/Cepave/common/utils"
+	log "github.com/Sirupsen/logrus"
+
+	cmodel "github.com/Cepave/open-falcon-backend/common/model"
+	cutils "github.com/Cepave/open-falcon-backend/common/utils"
 	rings "github.com/toolkits/consistent/rings"
 	nset "github.com/toolkits/container/set"
 	spool "github.com/toolkits/pool/simple_conn_pool"
 
-	"github.com/Cepave/query/g"
+	"github.com/masato25/query/g"
 )
 
 // 连接池
@@ -29,6 +30,13 @@ var (
 )
 
 func Start() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("graph got painc")
+			log.Error(fmt.Sprintf("%s", r))
+			Start()
+		}
+	}()
 	initNodeRings()
 	initConnPools()
 	log.Println("graph.Start ok")

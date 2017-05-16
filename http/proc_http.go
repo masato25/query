@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Cepave/query/graph"
-	"github.com/Cepave/query/proc"
+	"github.com/masato25/query/graph"
+	"github.com/masato25/query/proc"
 )
 
 func configProcHttpRoutes() {

@@ -2,12 +2,13 @@ package http
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 
 	"github.com/astaxie/beego/orm"
 )
@@ -26,7 +27,7 @@ func parsePlatformJSON(result map[string]interface{}) map[string]interface{} {
 				hostname = device.(map[string]interface{})["hostname"].(string)
 				if _, ok := hostnamesMap[hostname]; !ok {
 					ip := device.(map[string]interface{})["ip"].(string)
-					if ip == getIPFromHostname(hostname, result) {
+					if len(ip) > 0 && ip == getIPFromHostname(hostname, result) {
 						hostnames = append(hostnames, hostname)
 						idcID := device.(map[string]interface{})["pop_id"].(string)
 						host := map[string]interface{}{
@@ -301,43 +302,41 @@ func getUsers(result map[string]interface{}) map[string]string {
 	return users
 }
 
-func getNotes(result map[string]interface{}) map[string]interface{} {
-	notes := map[string]interface{}{}
-	users := getUsers(result)
+func getNote(hash string, timestamp string) []map[string]string {
 	o := orm.NewOrm()
 	var rows []orm.Params
-	sqlcmd := "SELECT event_caseId, note, status, timestamp, user_id "
-	sqlcmd += "FROM falcon_portal.event_note ORDER BY timestamp DESC"
-	num, err := o.Raw(sqlcmd).Values(&rows)
+	queryStr := fmt.Sprintf(`SELECT note.id as id, note.event_caseId as event_caseId, note.note as note, note.case_id as case_id, note.status as status, note.timestamp as timestamp, user.name as name from
+	(SELECT * from falcon_portal.event_note WHERE event_caseId = '%s' AND timestamp >= '%s')
+	 note LEFT JOIN uic.user as user on note.user_id = user.id;`, hash, timestamp)
+
+	num, err := o.Raw(queryStr).Values(&rows)
+	notes := []map[string]string{}
 	if err != nil {
-		setError(err.Error(), result)
-	} else if num > 0 {
+		log.Error(err.Error())
+	} else if num == 0 {
+		return notes
+	} else {
 		for _, row := range rows {
 			hash := row["event_caseId"].(string)
 			time := row["timestamp"].(string)
 			time = time[:len(time)-3]
-			userID := row["user_id"].(string)
+			user := row["name"].(string)
 			note := map[string]string{
 				"note":   row["note"].(string),
 				"status": row["status"].(string),
-				"user":   users[userID],
+				"user":   user,
+				"hash":   hash,
 				"time":   time,
 			}
-			if slice, ok := notes[hash]; ok {
-				slice = append(slice.([]map[string]string), note)
-				notes[hash] = slice
-			} else {
-				notes[hash] = []map[string]string{
-					note,
-				}
-			}
+			notes = append(notes, note)
 		}
 	}
 	return notes
 }
 
 func setSQLQuery(templateIDs string, req *http.Request, result map[string]interface{}) string {
-	sqlcmd := "SELECT id, endpoint, metric, note, priority, status, timestamp, update_at, template_id, tpl_creator, process_status "
+	sqlcmd := "SELECT id, endpoint, metric, func, cond, note, max_step, current_step, priority, status, "
+	sqlcmd += "timestamp, update_at, template_id, tpl_creator, process_status "
 	sqlcmd += "FROM falcon_portal.event_cases "
 	whereConditions := []string{}
 	query := req.URL.Query()
@@ -385,7 +384,7 @@ func setSQLQuery(templateIDs string, req *http.Request, result map[string]interf
 		limit = query.Get("limit")
 	}
 	if templateIDs != "*" {
-		whereConditions = append(whereConditions, "template_id IN ('"+templateIDs+"')")
+		whereConditions = append(whereConditions, "template_id IN ("+templateIDs+")")
 	}
 	if len(whereConditions) > 0 {
 		conditions := strings.Join(whereConditions, " AND ")
@@ -432,7 +431,6 @@ func queryAlerts(sqlcmd string, req *http.Request, result map[string]interface{}
 		eventsLimit = query.Get("elimit")
 	}
 
-	notes := getNotes(result)
 	o := orm.NewOrm()
 	var rows []orm.Params
 	num, err := o.Raw(sqlcmd).Values(&rows)
@@ -447,15 +445,18 @@ func queryAlerts(sqlcmd string, req *http.Request, result map[string]interface{}
 			content := row["note"].(string)
 			priority := row["priority"].(string)
 			statusRaw := row["status"].(string)
-			time := row["update_at"].(string)
-			time = time[:len(time)-3]
-			process := row["process_status"].(string)
-			note := []map[string]string{}
-			if _, ok := notes[hash]; ok {
-				note = notes[hash].([]map[string]string)
-				process = row["process_status"].(string)
-				process = strings.Replace(process, process[:1], strings.ToUpper(process[:1]), 1)
+			timeStart := row["timestamp"].(string)
+			timeStart = timeStart[:len(timeStart)-3]
+			timeUpdate := row["update_at"].(string)
+			timeUpdate = timeUpdate[:len(timeUpdate)-3]
+			process := strings.ToLower(row["process_status"].(string))
+			process = strings.Replace(process, process[:1], strings.ToUpper(process[:1]), 1)
+			note := getNote(hash, row["timestamp"].(string))
+			//this is a work around for auto clean process when the status is expired
+			if len(note) == 0 {
+				process = "unresolved"
 			}
+			process = strings.Replace(process, process[:1], strings.ToUpper(process[:1]), 1)
 			templateID := row["template_id"].(string)
 			author := row["tpl_creator"].(string)
 			alert := map[string]interface{}{
@@ -470,11 +471,16 @@ func queryAlerts(sqlcmd string, req *http.Request, result map[string]interface{}
 				"statusRaw":  statusRaw,
 				"type":       metricType,
 				"content":    content,
-				"time":       time,
-				"duration":   getDuration(time, result),
-				"note":       note,
+				"timeStart":  timeStart,
+				"timeUpdate": timeUpdate,
+				"duration":   getDuration(timeUpdate, result),
+				"notes":      note,
 				"events":     getEvents(hash, eventsLimit, result),
 				"process":    process,
+				"function":   row["func"].(string),
+				"condition":  row["cond"].(string),
+				"stepLimit":  row["max_step"].(string),
+				"step":       row["current_step"].(string),
 			}
 			alerts = append(alerts, alert)
 		}
@@ -482,7 +488,7 @@ func queryAlerts(sqlcmd string, req *http.Request, result map[string]interface{}
 	return alerts
 }
 
-func addPlatformToAlerts(alerts []interface{}, result map[string]interface{}, nodes map[string]interface{}, rw http.ResponseWriter) ([]interface{}, map[string]string) {
+func addPlatformToAlerts(alerts []interface{}, result map[string]interface{}, nodes map[string]interface{}, rw http.ResponseWriter) []interface{} {
 	items := []interface{}{}
 	hostnames := []string{}
 	platformNames := []string{}
@@ -507,9 +513,9 @@ func addPlatformToAlerts(alerts []interface{}, result map[string]interface{}, no
 				item.(map[string]interface{})["contact"] = contacts
 				items = append(items, item)
 			} else {
-				item.(map[string]interface{})["ip"] = "-"
-				item.(map[string]interface{})["platform"] = "-"
-				item.(map[string]interface{})["idc"] = "-"
+				item.(map[string]interface{})["ip"] = host["ip"].(string) + " (deactivated)"
+				item.(map[string]interface{})["platform"] = host["platform"].(string)
+				item.(map[string]interface{})["idc"] = host["idc"].(string)
 				contact := map[string]string{
 					"email": "-",
 					"name":  "-",
@@ -520,12 +526,12 @@ func addPlatformToAlerts(alerts []interface{}, result map[string]interface{}, no
 				}
 				item.(map[string]interface{})["contact"] = contacts
 				items = append(items, item)
-				log.Println("host deactivated:", hostname)
+				log.Debugf("host deactivated: %v", hostname)
 			}
 		} else {
-			item.(map[string]interface{})["ip"] = "-"
-			item.(map[string]interface{})["platform"] = "-"
-			item.(map[string]interface{})["idc"] = "-"
+			item.(map[string]interface{})["ip"] = "not found"
+			item.(map[string]interface{})["platform"] = "not found"
+			item.(map[string]interface{})["idc"] = "not found"
 			contact := map[string]string{
 				"email": "-",
 				"name":  "-",
@@ -536,7 +542,7 @@ func addPlatformToAlerts(alerts []interface{}, result map[string]interface{}, no
 			}
 			item.(map[string]interface{})["contact"] = contacts
 			items = append(items, item)
-			log.Println("hostname not found:", hostname)
+			log.Debugf("hostname not found: %v", hostname)
 		}
 	}
 	for _, item := range items {
@@ -561,7 +567,7 @@ func addPlatformToAlerts(alerts []interface{}, result map[string]interface{}, no
 		}
 	}
 	sort.Strings(platformNames)
-	getPlatformContact(strings.Join(platformNames, ","), rw, nodes)
+	getPlatformContact(strings.Join(platformNames, ","), nodes)
 	platforms := nodes["result"].(map[string]interface{})["items"].(map[string]interface{})
 	if len(platforms) > 0 {
 		for _, item := range items {
@@ -580,10 +586,10 @@ func addPlatformToAlerts(alerts []interface{}, result map[string]interface{}, no
 			}
 		}
 	}
-	return items, hostsTriggeredMap
+	return items
 }
 
-func getAlertCount(items []interface{}) map[string]int {
+func getAlertSeverityCounts(items []interface{}) map[string]int {
 	count := map[string]int{
 		"all":    len(items),
 		"high":   0,
@@ -601,6 +607,91 @@ func getAlertCount(items []interface{}) map[string]int {
 			count["low"]++
 		} else if severity == "Lower" {
 			count["lower"]++
+		}
+	}
+	return count
+}
+
+func getAlertProcessCounts(items []interface{}) map[string]int {
+	count := map[string]int{
+		"unresolved":  0,
+		"in progress": 0,
+		"resolved":    0,
+		"ignored":     0,
+	}
+	for _, item := range items {
+		process := strings.ToLower(item.(map[string]interface{})["process"].(string))
+		if process == "unresolved" {
+			count["unresolved"]++
+		} else if process == "in progress" {
+			count["in progress"]++
+		} else if process == "resolved" {
+			count["resolved"]++
+		} else if process == "ignored" {
+			count["ignored"]++
+		}
+	}
+	return count
+}
+
+func getAlertMetricTypeCounts(items []interface{}) map[string]int {
+	count := map[string]int{
+		"cpu":          0,
+		"disk":         0,
+		"memory":       0,
+		"net":          0,
+		"others":       0,
+		"agent":        0,
+		"check":        0,
+		"chk":          0,
+		"dev":          0,
+		"fcd":          0,
+		"file":         0,
+		"fm":           0,
+		"http":         0,
+		"nic":          0,
+		"proc":         0,
+		"tags":         0,
+		"zabbix-agent": 0,
+	}
+	for _, item := range items {
+		metric := item.(map[string]interface{})["metric"].(string)
+		metricType := strings.ToLower(strings.Split(metric, ".")[0])
+		if metricType == "cpu" {
+			count["cpu"]++
+		} else if metricType == "disk" {
+			count["disk"]++
+		} else if metricType == "memory" {
+			count["memory"]++
+		} else if metricType == "net" {
+			count["net"]++
+		} else {
+			count["others"]++
+			if metricType == "agent" {
+				count["agent"]++
+			} else if metricType == "check" {
+				count["check"]++
+			} else if metricType == "chk" {
+				count["chk"]++
+			} else if metricType == "dev" {
+				count["dev"]++
+			} else if metricType == "fcd" {
+				count["fcd"]++
+			} else if metricType == "file" {
+				count["file"]++
+			} else if metricType == "fm" {
+				count["fm"]++
+			} else if metricType == "http" {
+				count["http"]++
+			} else if metricType == "nic" {
+				count["nic"]++
+			} else if metricType == "proc" {
+				count["proc"]++
+			} else if metricType == "zabbix-agent" {
+				count["zabbix-agent"]++
+			} else if strings.Index(metricType, "tags") > -1 {
+				count["tags"]++
+			}
 		}
 	}
 	return count
@@ -624,12 +715,16 @@ func getAlerts(rw http.ResponseWriter, req *http.Request) {
 		items := []interface{}{}
 		sqlcmd := setSQLQuery(templateIDs, req, result)
 		alerts = queryAlerts(sqlcmd, req, result)
-		items, hostToPlatform := addPlatformToAlerts(alerts, result, nodes, rw)
-		count := getAlertCount(items)
+		items = addPlatformToAlerts(alerts, result, nodes, rw)
+		countOfSeverity := getAlertSeverityCounts(items)
+		countOfProcess := getAlertProcessCounts(items)
+		countOfMetricType := getAlertMetricTypeCounts(items)
 		result["items"] = items
 		nodes["result"] = result
-		nodes["count"] = count
-		nodes["hosts"] = hostToPlatform
+		nodes["count"] = countOfSeverity
+		nodes["countOfSeverity"] = countOfSeverity
+		nodes["countOfProcess"] = countOfProcess
+		nodes["countOfMetricType"] = countOfMetricType
 		rw.Header().Set("Access-Control-Allow-Origin", "*")
 		setResponse(rw, nodes)
 	}

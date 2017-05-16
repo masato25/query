@@ -2,12 +2,16 @@ package conf
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
-	"log"
+	"os"
 	"reflect"
 	"sync"
 
-	"github.com/Cepave/query/utils"
+	log "github.com/Sirupsen/logrus"
+
+	"github.com/masato25/query/g"
+	"github.com/masato25/query/utils"
 )
 
 type Gconfig struct {
@@ -36,18 +40,51 @@ func Config() map[string]*FunConfig {
 }
 
 func functionMapGen() {
+	currentPath := g.Config().RootDir
+	possiblePath := []string{"../config/js", "config/js", "conf/js", "js"}
+	f := ""
+	for _, pa := range possiblePath {
+		paf := fmt.Sprintf("%s/%s", currentPath, pa)
+		if _, err := os.Stat(paf); err != nil {
+			log.Debugf("can't not load file from: %s", paf)
+		} else {
+			f = paf
+			break
+		}
+	}
+	if f == "" {
+		log.Fatalf("load js files got error, currentPaht: %s , please check your code tree and make is correct!", currentPath)
+	} else {
+		log.Info("load javascript scrips successed in " + f)
+	}
+
 	FunctionMap = map[string]*FunConfig{}
 	for _, v := range gconfig {
-		contain := jsFileReader(v.FilePath)
+		contain := jsFileReader(fmt.Sprintf("%s/%s", f, v.FilePath))
 		v.Codes = contain
 		FunctionMap[v.FuncationName] = v
 	}
 }
 
-func ReadConf(f string) {
-	if f == "" {
-		f = "./lambdaSetup.json"
+func ReadConf() {
+	currentPath := g.Config().RootDir
+	possiblePath := []string{"conf/lambdaSetup.json", "config/lambdaSetup.json", "../config/lambdaSetup.json"}
+	f := ""
+	for _, pa := range possiblePath {
+		paf := fmt.Sprintf("%s/%s", currentPath, pa)
+		if _, err := os.Stat(paf); err != nil {
+			log.Debugf("can't not load file from: %s", paf)
+		} else {
+			f = paf
+			break
+		}
 	}
+	if f == "" {
+		log.Fatalf("lambdaSetup.json not found, currentPaht: %s", currentPath)
+	} else {
+		log.Info("read lambdaSetup.json successed wuth " + f)
+	}
+
 	confpath = &f
 	dat, err := ioutil.ReadFile(f)
 	if err != nil {
@@ -64,7 +101,7 @@ func ReadConf(f string) {
 
 func Reload() {
 	configLock.RLock()
-	ReadConf(*confpath)
+	ReadConf()
 	defer configLock.RUnlock()
 }
 

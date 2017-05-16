@@ -6,7 +6,7 @@ import (
 
 	"github.com/toolkits/file"
 
-	"github.com/Cepave/query/g"
+	"github.com/masato25/query/g"
 )
 
 func configCommonRoutes() {

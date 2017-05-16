@@ -6,10 +6,10 @@ import (
 	"net"
 	"regexp"
 
-	cmodel "github.com/Cepave/common/model"
-	"github.com/Cepave/query/g"
-	"github.com/Cepave/query/graph"
-	pb "github.com/Cepave/query/grpc/proto/owlquery"
+	cmodel "github.com/Cepave/open-falcon-backend/common/model"
+	"github.com/masato25/query/g"
+	"github.com/masato25/query/graph"
+	pb "github.com/masato25/query/grpc/proto/owlquery"
 	log "github.com/Sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -89,7 +89,8 @@ func (s *server) Query(ctx context.Context, in *pb.QueryInput) (*pb.QueryReply, 
 	// When Values is empty will generate null in jsonMarshal
 	// This will terms "null" into "[]"
 	for idx, result := range resTmp {
-		if result.Values == nil {
+		if result == nil {
+			result = &cmodel.GraphQueryResponse{}
 			result.Values = []*cmodel.RRDData{}
 		}
 		resTmp[idx] = result

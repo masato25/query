@@ -1,8 +1,17 @@
 {
     "debug": false,
+    "root_dir": "/home/query",
     "http": {
         "enabled":  true,
         "listen":   "0.0.0.0:9966"
+    },
+    "hosts": {
+        "enabled": true,
+        "interval": 60
+    },
+    "contacts": {
+        "enabled": true,
+        "interval": 3600
     },
     "gin_http": {
         "enabled":  true,
@@ -39,6 +48,11 @@
         "idle": 10,
         "max": 100
     },
+    "bossdb": {
+        "addr": "root:@tcp(127.0.0.1:3306)/boss?charset=utf8&loc=Asia%2FTaipei",
+        "idle": 10,
+        "max": 100
+    },
     "graphdb": {
         "addr": "root:password@tcp(10.20.30.40:3306)/graph?charset=utf8&parseTime=True&loc=Local",
         "idle": 10,
@@ -50,7 +64,9 @@
         "idle": 10,
         "max": 100
     },
+    "local": "http://localhost:port_of_query",
     "nqmlog": {
         "jsonrpcUrl": "http://127.0.0.1:6171/jsonrpc"
-    }
+    },
+    "fe": "http://10.0.1.167:1234"
 }

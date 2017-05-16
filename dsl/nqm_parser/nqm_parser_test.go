@@ -32,58 +32,25 @@ func (suite *TestNqmDslParserSuite) TestTimeParams(c *C) {
 	}
 
 	for _, testCase := range testCases {
-		testedQueryParams, err := doParse(
+		testedParamSetters, err := doParse(
 			fmt.Sprintf("starttime=%s endtime=%s", testCase.sampleStartTime, testCase.sampleEndTime),
 		)
 
 		c.Assert(err, IsNil)
+
+		var testedQueryParams = NewQueryParams()
+
+		testedQueryParams.SetUpParams(testedParamSetters)
 
 		c.Assert(testedQueryParams.StartTime.Unix(), Equals, testCase.expectedStartTime.Unix())
 		c.Assert(testedQueryParams.EndTime.Unix(), Equals, testCase.expectedEndTime.Unix())
 	}
 }
 
-// Tests the paring for node parameters
-type getCheckedValue func(testedQueryParam *QueryParams) []string
+type assertionFunc func(testedQueryParam *QueryParams)
 type nodeParamsTestCase struct {
 	dsl string
-	expectedNodeValue []string
-	getCheckedValue getCheckedValue
-}
-func (suite *TestParseProcessorSuite) TestNodeParams(c *C) {
-	testCases := []*nodeParamsTestCase {
-		&nodeParamsTestCase{
-			"agent.province=廣東,浙江,山東", []string{ "廣東", "浙江", "山東"},
-			func (testedQueryParam *QueryParams) []string { return testedQueryParam.AgentFilter.MatchProvinces },
-		},
-		&nodeParamsTestCase{
-			"agent.isp=i1,i2", []string{ "i1", "i2" },
-			func (testedQueryParam *QueryParams) []string { return testedQueryParam.AgentFilter.MatchIsps },
-		},
-		&nodeParamsTestCase{
-			"agent.city=c1,c2", []string{ "c1", "c2" },
-			func (testedQueryParam *QueryParams) []string { return testedQueryParam.AgentFilter.MatchCities },
-		},
-		&nodeParamsTestCase{
-			"target.province=北京,台北", []string{ "北京", "台北" },
-			func (testedQueryParam *QueryParams) []string { return testedQueryParam.TargetFilter.MatchProvinces },
-		},
-		&nodeParamsTestCase{
-			"target.isp=i3,i4", []string{ "i3", "i4" },
-			func (testedQueryParam *QueryParams) []string { return testedQueryParam.TargetFilter.MatchIsps },
-		},
-		&nodeParamsTestCase{
-			"target.city=c3,c4", []string{ "c3", "c4" },
-			func (testedQueryParam *QueryParams) []string { return testedQueryParam.TargetFilter.MatchCities },
-		},
-	}
-
-	for _, testCase := range testCases {
-		result, err := doParse(testCase.dsl)
-
-		c.Assert(err, IsNil)
-		c.Assert(testCase.getCheckedValue(result), DeepEquals, testCase.expectedNodeValue)
-	}
+	assertionImpl assertionFunc
 }
 
 func parseTime(timeStr string) time.Time {
@@ -113,18 +80,29 @@ func (suite *TestNqmDslParserSuite) TestUnknownParam(c *C) {
 		&unknownParamTestCase{ "agent.gogo", ".*agent.gogo.*" },
 		&unknownParamTestCase{ "starttime9=33 starttime=10 endtime=20", ".*starttime9.*" },
 		&unknownParamTestCase{ "starttime=10 endtime=20 endtime9=22", ".*endtime9.*" },
+		&unknownParamTestCase{ "agent.isp=%AC1%", ".*auto-condition.*" },
+		&unknownParamTestCase{ "agent.province=%AC1%", ".*auto-condition.*" },
+		&unknownParamTestCase{ "agent.city=%AC1%", ".*auto-condition.*" },
+		&unknownParamTestCase{ "target.isp=%TC2%", ".*auto-condition.*" },
+		&unknownParamTestCase{ "target.province=%TC2%", ".*auto-condition.*" },
+		&unknownParamTestCase{ "target.city=%TC2%", ".*auto-condition.*" },
 	}
 
 	for _, testCase := range testCases {
 		_, err := doParse(testCase.sampleDsl)
 
-		c.Logf("Error Content: %v", err)
+		allErrors := err.(errList)
 
-		c.Assert(err, ErrorMatches, testCase.errorMatch)
+		for i, parseError := range allErrors {
+			c.Logf("Error Content[%v]: %v", i, parseError)
+		}
+
+		c.Assert(len(allErrors), Equals, 1)
+		c.Assert(allErrors[0], ErrorMatches, testCase.errorMatch)
 	}
 }
 
-func doParse(sampleDsl string) (*QueryParams, error) {
+func doParse(sampleDsl string) ([]paramSetter, error) {
 	result, err := ParseReader(
 		"TestNqmDslParserSuite.file",
 		strings.NewReader(sampleDsl),
@@ -134,5 +112,5 @@ func doParse(sampleDsl string) (*QueryParams, error) {
 		return nil, err
 	}
 
-	return result.(*QueryParams), err
+	return result.([]paramSetter), err
 }

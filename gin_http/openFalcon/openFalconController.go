@@ -7,15 +7,15 @@ import (
 
 	"fmt"
 
-	cmodel "github.com/Cepave/common/model"
-	"github.com/Cepave/query/graph"
-	"github.com/Cepave/query/model"
+	cmodel "github.com/Cepave/open-falcon-backend/common/model"
 	log "github.com/Sirupsen/logrus"
 	"github.com/gin-gonic/gin"
+	"github.com/masato25/query/graph"
+	"github.com/masato25/query/model"
 )
 
 func GetEndpoints(c *gin.Context) {
-	enps := model.EndpointQuery()
+	enps := model.EndpointQuery("")
 	c.JSON(200, gin.H{
 		"status": "ok",
 		"data": map[string][]string{
@@ -24,6 +24,23 @@ func GetEndpoints(c *gin.Context) {
 	})
 }
 
+func QueryOnce(startTs int64, endTs int64, consolFun string, step int, counter string, endpoints []string) (result []*cmodel.GraphQueryResponse) {
+	result = []*cmodel.GraphQueryResponse{}
+	for _, enp := range endpoints {
+		q := cmodel.GraphQueryParam{
+			Start:     startTs,
+			End:       endTs,
+			ConsolFun: consolFun,
+			Step:      step,
+			Endpoint:  enp,
+			Counter:   counter,
+		}
+		res, _ := graph.QueryOne(q)
+		//log.Debug(fmt.Sprintf("%v, %v, %v", res.Counter, res.Endpoint, len(res.Values)))
+		result = append(result, res)
+	}
+	return
+}
 func QDataGet(c *gin.Context) []*cmodel.GraphQueryResponse {
 	startTmp := c.DefaultQuery("startTs", string(time.Now().Unix()-(86400)))
 	startTmp2, _ := strconv.Atoi(startTmp)
@@ -35,21 +52,8 @@ func QDataGet(c *gin.Context) []*cmodel.GraphQueryResponse {
 	stepTmp := c.DefaultQuery("step", "60")
 	step, _ := strconv.Atoi(stepTmp)
 	counter := c.DefaultQuery("counter", "cpu.idle")
-	endpoints := model.EndpointQuery()
-	var result []*cmodel.GraphQueryResponse
-	for _, enp := range endpoints {
-		q := cmodel.GraphQueryParam{
-			Start:     startTs,
-			End:       endTs,
-			ConsolFun: consolFun,
-			Step:      step,
-			Endpoint:  enp,
-			Counter:   counter,
-		}
-		res, _ := graph.QueryOne(q)
-		log.Debug(fmt.Sprintf("%v, %v, %v", res.Counter, res.Endpoint, len(res.Values)))
-		result = append(result, res)
-	}
+	endpoints := model.EndpointQuery("")
+	result := QueryOnce(startTs, endTs, consolFun, step, counter, endpoints)
 	log.Debug(fmt.Sprintf("%s: %d", "openfaclon query got", len(result)))
 	return result
 }

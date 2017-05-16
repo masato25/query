@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"strings"
 
-	"github.com/Cepave/query/g"
+	log "github.com/Sirupsen/logrus"
+
+	"github.com/masato25/query/g"
 )
 
 type EndpointCounters struct {
@@ -53,7 +54,7 @@ func DoPost() {
 	data, _ := json.Marshal(&dd)
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(data)))
 	if err != nil {
-		log.Println(err.Error())
+		log.Error(err.Error())
 	}
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 	client := &http.Client{}

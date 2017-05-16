@@ -2,12 +2,13 @@ package http
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	_ "net/http/pprof"
 	"strings"
 
-	"github.com/Cepave/query/g"
+	log "github.com/Sirupsen/logrus"
+
+	"github.com/masato25/query/g"
 	"github.com/astaxie/beego/orm"
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -30,6 +31,9 @@ func InitDatabase() {
 	orm.RegisterDataBase("grafana", "mysql", strConn, config.Db.Idle, config.Db.Max)
 	orm.RegisterModel(new(Province), new(City), new(Idc))
 
+	orm.RegisterDataBase("boss", "mysql", config.BossDB.Addr, config.BossDB.Idle, config.BossDB.Max)
+	orm.RegisterModel(new(Contacts), new(Hosts), new(Platforms))
+
 	orm.RegisterDataBase("gz_nqm", "mysql", config.Nqm.Addr, config.Nqm.Idle, config.Nqm.Max)
 	orm.RegisterModel(new(Nqm_node))
 
@@ -40,7 +44,7 @@ func InitDatabase() {
 
 func Start() {
 	if !g.Config().Http.Enabled {
-		log.Println("http.Start warning, not enable")
+		log.Error("http.Start warning, not enable")
 		return
 	}
 
@@ -57,6 +61,7 @@ func Start() {
 
 	// start mysql database
 	InitDatabase()
+	go SyncHostsAndContactsTable()
 
 	// start http server
 	addr := g.Config().Http.Listen
